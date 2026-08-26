@@ -4,56 +4,117 @@
 
 Vibe Lint is not another vibe score or session dashboard. It reads local coding-agent evidence, detects a small set of costly workflow failures, and shows the receipts.
 
-Current build: **Milestone 1 — Claude Code + V001**.
+Current build: **Claude corpus inspector + V001**.
 
 ```text
-Claude transcript → normalized events → V001 detector → evidence-backed incident
+Claude transcripts + subagents
+        ↓
+corpus discovery / evidence inspector
+        ↓
+normalized events
+        ↓
+V001 detector
+        ↓
+evidence-backed incidents
 ```
 
 ## What works today
 
-- Parses Claude Code JSONL transcripts locally.
+- Discovers Claude Code projects, parent sessions, and subagent JSONL transcripts under `~/.claude/projects`.
+- Parses Claude Code JSONL locally and keeps line-level provenance.
 - Normalizes assistant messages, tool calls, and tool results into a source-independent event stream.
-- Detects `V001 CLAIM_WITHOUT_EVIDENCE` when a success claim such as “all tests are passing” directly contradicts a failed matching verification command.
-- Emits Class A evidence including the command, exit code, output, and transcript line provenance.
-- Finds the latest Claude Code session for the current repository with `vibe last`.
+- Detects `V001 CLAIM_WITHOUT_EVIDENCE` when an explicit test/build/lint success claim contradicts matching verification evidence.
+- Understands real verification shapes including `npm test`, `node --test`, Deno tests, Jest, Vitest, compound commands, and output summaries such as `14 passed | 1 failed`.
+- Inspects evidence coverage so zero findings are explainable.
+- Scans the entire local Claude corpus, including subagents.
 - Requires no runtime dependencies, API key, account, or network access.
 
-## Try it
+## Install locally
 
 Requires Node.js 20+.
 
 ```bash
+git clone https://github.com/sai-prakash/vibe-me-better.git
+cd vibe-me-better
 npm test
-node ./bin/vibe.js scan ./test/fixtures/claude/failing-tests-then-claim.jsonl
+npm link
 ```
 
-Or from a repository you have used with Claude Code:
+## Commands
+
+Inventory all locally recorded Claude sessions:
 
 ```bash
-node /path/to/vibe-me-better/bin/vibe.js last
+vibe sessions
 ```
 
-Machine-readable output:
+Inspect one real session before interpreting detector results:
 
 ```bash
-node ./bin/vibe.js scan ./session.jsonl --json
+vibe inspect ~/.claude/projects/<project>/<session>.jsonl
 ```
 
-## Example
+Or inspect the latest Claude session for the current repository:
+
+```bash
+vibe inspect --last
+```
+
+Scan one transcript:
+
+```bash
+vibe scan ~/.claude/projects/<project>/<session>.jsonl
+```
+
+Scan the entire Claude corpus, including subagents:
+
+```bash
+vibe scan --all
+```
+
+Parent sessions only:
+
+```bash
+vibe scan --all --no-subagents
+```
+
+Every command supports machine-readable output where applicable:
+
+```bash
+vibe sessions --json
+vibe inspect ~/.claude/projects/<project>/<session>.jsonl --json
+vibe scan --all --json
+```
+
+## Why `inspect` matters
+
+`No V001 contradictions found` is not the same as `nothing went wrong`.
+
+`vibe inspect` explains the denominator:
 
 ```text
-Vibe Lint
-Session: claude-code · failing-tests-then-claim.jsonl
+Vibe Inspect
 
-1 incident found
+Evidence coverage
+  Raw JSONL records:      1330
+  Tool calls:             219
+  Bash calls:             140
+  Linked subagents:       4
 
-1. [A] V001 CLAIM_WITHOUT_EVIDENCE
-   Assistant claimed "All tests are passing" after a failing test command.
-   Command: npm test
-   Exit: 1
-   Output: Error: Exit code 1
+Verification
+  Total runs:             38
+  Passed:                 29
+  Failed:                 6
+  Unknown:                3
+
+Verification claims
+  Total:                  8
+  Supported:              8
+  Contradicted:           0
+  Unknown/no evidence:    0
 ```
+
+Those numbers are illustrative; Vibe reports the values from your own transcript.
 
 ## Product rules
 
@@ -62,6 +123,7 @@ Session: claude-code · failing-tests-then-claim.jsonl
 3. Heuristics must never be presented like proof.
 4. Cross-agent is an architecture requirement; Claude Code + Codex are the MVP integrations.
 5. Local-first by default.
+6. Zero findings must expose evidence coverage, not imply a clean bill of health.
 
 ## Docs
 
@@ -71,9 +133,9 @@ Session: claude-code · failing-tests-then-claim.jsonl
 
 ## Planned next
 
-- Codex rollout adapter.
-- `V002 REPEATED_FAILURE_LOOP`.
+- `V002 REPEATED_FAILURE_LOOP`, driven by real repeated-failure fingerprints rather than repeated-command counts.
+- Codex rollout adapter against the same normalized event contract.
 - `.vibe/policy.yml` + `V003 POLICY_VIOLATION`.
 - `V004 POSSIBLE_DIFF_SPILL` only as a clearly-labelled heuristic.
 
-The project is intentionally small until real-session dogfooding proves the incidents are trustworthy and useful.
+The project stays intentionally small until dogfooding proves the incidents are trustworthy and useful.
