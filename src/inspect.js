@@ -5,7 +5,10 @@ import {
   extractVerificationClaims,
   inferVerificationOutcome,
 } from './core/verification.js';
-import { detectRepeatedFailureLoop } from './detectors/v002-repeated-failure-loop.js';
+import {
+  collectFailureAttempts,
+  detectRepeatedFailureLoop,
+} from './detectors/v002-repeated-failure-loop.js';
 import {
   claudeTranscriptIdentity,
   findClaudeSubagentsForTranscript,
@@ -16,7 +19,7 @@ function rawLineCount(filePath) {
   return text.split(/\r?\n/).filter((line) => line.trim()).length;
 }
 
-export function inspectTranscript(filePath, { source = 'claude' } = {}) {
+export function inspectTranscript(filePath, { source = 'claude', includeFailures = false } = {}) {
   const parsed = parseTranscript(filePath, source);
   const identity = source === 'claude' ? claudeTranscriptIdentity(parsed.filePath) : null;
   const calls = new Map();
@@ -81,7 +84,26 @@ export function inspectTranscript(filePath, { source = 'claude' } = {}) {
 
   const claimSummary = { total: claims.length, supported: 0, contradicted: 0, unknown: 0 };
   for (const claim of claims) claimSummary[claim.status] += 1;
+
   const repeatedFailureLoops = detectRepeatedFailureLoop(parsed.events);
+  const commandRuns = collectFailureAttempts(parsed.events);
+  const failedRuns = commandRuns.filter((run) => run.outcome === 'fail');
+  const fingerprintable = failedRuns.filter((run) => run.failure);
+  const groupCounts = new Map();
+  for (const run of fingerprintable) {
+    const key = `${run.family}|${run.failure.hash}`;
+    const existing = groupCounts.get(key) ?? {
+      family: run.family,
+      failureFingerprint: run.failure.hash,
+      failure: run.failure.label,
+      count: 0,
+    };
+    existing.count += 1;
+    groupCounts.set(key, existing);
+  }
+  const repeatedGroups = [...groupCounts.values()]
+    .filter((group) => group.count >= 2)
+    .sort((a, b) => b.count - a.count);
 
   return {
     source: parsed.source,
@@ -105,10 +127,30 @@ export function inspectTranscript(filePath, { source = 'claude' } = {}) {
       byOutcome,
       byKind,
       runs: verificationRuns,
+      unknownRuns: includeFailures
+        ? verificationRuns.filter((run) => run.outcome === 'unknown')
+        : [],
     },
     claims: {
       ...claimSummary,
       items: claims,
+    },
+    failures: {
+      bashRuns: commandRuns.length,
+      failed: failedRuns.length,
+      fingerprintable: fingerprintable.length,
+      repeatedGroups: repeatedGroups.length,
+      groups: repeatedGroups,
+      items: includeFailures
+        ? failedRuns.map((run) => ({
+          family: run.family,
+          kind: run.kind,
+          command: run.call.command,
+          failureFingerprint: run.failure?.hash ?? null,
+          failure: run.failure?.label ?? null,
+          resultEvent: run.result.rawRef,
+        }))
+        : [],
     },
     behavior: {
       repeatedFailureLoops: repeatedFailureLoops.length,

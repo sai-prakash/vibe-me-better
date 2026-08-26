@@ -22,8 +22,8 @@ const HELP = `vibe — evidence-backed linting for AI coding sessions
 Usage:
   vibe scan <path|session-id|vibe-ref> [--source claude] [--json]
   vibe scan --all [--json] [--no-subagents]
-  vibe inspect <path|session-id|vibe-ref> [--json]
-  vibe inspect --last [--json]
+  vibe inspect <path|session-id|vibe-ref> [--failures] [--json]
+  vibe inspect --last [--failures] [--json]
   vibe sessions [--json]
   vibe last [--json]
   vibe doctor
@@ -32,11 +32,11 @@ Usage:
 Examples:
   vibe sessions
   vibe inspect v_4a91c2e87d3ff7ad
-  vibe inspect 95b63c43-8fb0-4b77-b5a6-6f82fdf4f09c
+  vibe inspect v_4a91c2e87d3ff7ad --failures
   vibe scan 95b63c43
 
 Current milestone:
-  Claude corpus inventory + stable session refs + evidence inspector + V001.
+  Claude corpus + evidence inspector + V001 + V002 command/tool failure loops.
 `;
 
 function parseFlags(args) {
@@ -45,6 +45,7 @@ function parseFlags(args) {
   let json = false;
   let all = false;
   let last = false;
+  let failures = false;
   let includeSubagents = true;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -61,6 +62,10 @@ function parseFlags(args) {
       last = true;
       continue;
     }
+    if (arg === '--failures') {
+      failures = true;
+      continue;
+    }
     if (arg === '--no-subagents') {
       includeSubagents = false;
       continue;
@@ -72,7 +77,7 @@ function parseFlags(args) {
     }
     values.push(arg);
   }
-  return { values, source, json, all, last, includeSubagents };
+  return { values, source, json, all, last, failures, includeSubagents };
 }
 
 function printResult(result, json, formatter) {
@@ -118,7 +123,7 @@ export function runCli(argv = process.argv.slice(2)) {
   }
 
   if (command === 'inspect') {
-    const { values, source, json, last } = parseFlags(rest);
+    const { values, source, json, last, failures } = parseFlags(rest);
     const selector = last
       ? findLatestClaudeTranscript(process.cwd())
       : values[0];
@@ -128,7 +133,7 @@ export function runCli(argv = process.argv.slice(2)) {
     }
 
     const filePath = requireTranscript(selector, { source });
-    printResult(inspectTranscript(filePath, { source }), json, formatInspection);
+    printResult(inspectTranscript(filePath, { source, includeFailures: failures }), json, formatInspection);
     return 0;
   }
 
