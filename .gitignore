@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+.vibe/index.json
+.vibe/reviews.jsonl
+coverage/

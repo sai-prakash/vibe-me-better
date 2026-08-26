@@ -1,0 +1,3 @@
+{"type":"assistant","timestamp":"2026-08-27T00:00:01Z","sessionId":"session-unrelated","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_ls_1","name":"Bash","input":{"command":"ls missing-dir"}}]}}
+{"type":"user","timestamp":"2026-08-27T00:00:03Z","sessionId":"session-unrelated","uuid":"u1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_ls_1","is_error":true,"content":"Error: Exit code 1\nNo such file or directory"}]},"toolUseResult":{"exitCode":1}}
+{"type":"assistant","timestamp":"2026-08-27T00:00:05Z","sessionId":"session-unrelated","uuid":"a2","message":{"role":"assistant","content":[{"type":"text","text":"All tests are passing."}]}}
