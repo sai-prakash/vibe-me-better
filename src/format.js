@@ -13,6 +13,12 @@ function formatBytes(bytes = 0) {
   return `${(bytes / 1024 ** 3).toFixed(1)}G`;
 }
 
+function formatDuration(ms) {
+  if (!Number.isFinite(ms)) return null;
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms / 60_000)}m`;
+}
+
 function shortProjectKey(key = '') {
   return key.length <= 54 ? key : `…${key.slice(-53)}`;
 }
@@ -24,28 +30,17 @@ function addSessionIdentity(lines, result, indent = '') {
   if (result.parentSessionId) lines.push(`${indent}Parent: ${result.parentSessionId}`);
 }
 
-export function formatScanResult(result) {
-  const lines = [];
-  lines.push('Vibe Lint');
-  lines.push(`Session: ${result.source} · ${path.basename(result.filePath)}`);
-  addSessionIdentity(lines, result);
-  lines.push('');
+function countsText(counts = {}) {
+  return `V001=${counts.V001 ?? 0} · V002=${counts.V002 ?? 0}`;
+}
 
-  if (result.incidents.length === 0) {
-    lines.push('No V001 contradictions found.');
-    lines.push(`Normalized events analyzed: ${result.eventCount}`);
-    lines.push(`Run \`vibe inspect ${result.sessionRef ?? '<session>'}\` to see verification coverage.`);
-    return lines.join('\n');
-  }
+function formatIncident(lines, incident, index) {
+  lines.push(`${index + 1}. [${incident.evidenceClass}] ${incident.detectorId} ${incident.detectorName}`);
+  lines.push(`   ${incident.summary}`);
 
-  lines.push(`${result.incidents.length} incident${result.incidents.length === 1 ? '' : 's'} found`);
-  lines.push('');
-
-  result.incidents.forEach((incident, index) => {
+  if (incident.detectorId === 'V001') {
     const commandEvidence = incident.evidence.find((item) => item.type === 'verification_command');
     const resultEvidence = incident.evidence.find((item) => item.type === 'verification_result');
-    lines.push(`${index + 1}. [${incident.evidenceClass}] ${incident.detectorId} ${incident.detectorName}`);
-    lines.push(`   ${incident.summary}`);
     lines.push(`   Command: ${commandEvidence?.command ?? 'unknown'}`);
     lines.push(`   Exit: ${resultEvidence?.exitCode ?? (resultEvidence?.isError ? 'error' : 'unknown')}`);
     if (resultEvidence?.outcomeSource) {
@@ -57,8 +52,49 @@ export function formatScanResult(result) {
       lines.push(`   Claim: ${path.basename(incident.claim.event.path)}:${incident.claim.event.line}`);
     }
     lines.push('');
-  });
+    return;
+  }
 
+  if (incident.detectorId === 'V002') {
+    const first = incident.evidence[0];
+    lines.push(`   Attempts: ${incident.attempts}`);
+    lines.push(`   Failure: ${incident.failure}`);
+    lines.push(`   Command: ${first?.command ?? 'unknown'}`);
+    lines.push(`   Failure fingerprint: ${incident.failureFingerprint}`);
+    const duration = formatDuration(incident.durationMs);
+    if (duration) lines.push(`   Span: ${duration}`);
+    lines.push('   Receipts:');
+    for (const attempt of incident.evidence) {
+      const location = attempt.resultEvent?.line
+        ? `${path.basename(attempt.resultEvent.path)}:${attempt.resultEvent.line}`
+        : 'unknown';
+      lines.push(`     #${attempt.attempt} ${location}`);
+    }
+    lines.push('');
+    return;
+  }
+
+  lines.push('');
+}
+
+export function formatScanResult(result) {
+  const lines = [];
+  lines.push('Vibe Lint');
+  lines.push(`Session: ${result.source} · ${path.basename(result.filePath)}`);
+  addSessionIdentity(lines, result);
+  lines.push(`Detectors: ${countsText(result.detectorCounts)}`);
+  lines.push('');
+
+  if (result.incidents.length === 0) {
+    lines.push('No Vibe incidents found.');
+    lines.push(`Normalized events analyzed: ${result.eventCount}`);
+    lines.push(`Run \`vibe inspect ${result.sessionRef ?? '<session>'}\` to see evidence coverage.`);
+    return lines.join('\n');
+  }
+
+  lines.push(`${result.incidents.length} incident${result.incidents.length === 1 ? '' : 's'} found`);
+  lines.push('');
+  result.incidents.forEach((incident, index) => formatIncident(lines, incident, index));
   return lines.join('\n').trimEnd();
 }
 
@@ -166,7 +202,9 @@ export function formatBulkScan(result) {
     `Parent sessions scanned: ${result.totals.scannedMainSessions}`,
     `Subagents scanned: ${result.totals.scannedSubagents}`,
     `Normalized events: ${result.totals.events}`,
-    `V001 incidents: ${result.totals.incidents}`,
+    `Incidents: ${result.totals.incidents}`,
+    `V001 incidents: ${result.totals.detectorCounts?.V001 ?? 0}`,
+    `V002 incidents: ${result.totals.detectorCounts?.V002 ?? 0}`,
   ];
 
   if (result.totals.errors > 0) lines.push(`Parse errors: ${result.totals.errors}`);
@@ -174,14 +212,14 @@ export function formatBulkScan(result) {
   lines.push('', 'Sessions scanned');
   for (const session of result.sessions) {
     lines.push(
-      `${session.sessionRef}  ${session.sessionType.padEnd(8)}  events=${String(session.eventCount).padStart(5)}  V001=${session.incidents.length}  ${session.sessionId}`,
+      `${session.sessionRef}  ${session.sessionType.padEnd(8)}  events=${String(session.eventCount).padStart(5)}  ${countsText(session.detectorCounts)}  ${session.sessionId}`,
     );
   }
 
   lines.push('');
   const withIncidents = result.sessions.filter((session) => session.incidents.length > 0);
   if (withIncidents.length === 0) {
-    lines.push(`No V001 contradictions found across ${result.totals.scannedSessions} transcript${result.totals.scannedSessions === 1 ? '' : 's'}.`);
+    lines.push(`No Vibe incidents found across ${result.totals.scannedSessions} transcript${result.totals.scannedSessions === 1 ? '' : 's'}.`);
     lines.push('Pick a ref above and run `vibe inspect <ref>` for evidence coverage before treating zero findings as a clean bill of health.');
     return lines.join('\n');
   }
@@ -191,7 +229,7 @@ export function formatBulkScan(result) {
     lines.push(`${session.incidents.length} · ${session.sessionType} · ${session.sessionRef} · ${session.sessionId}`);
     lines.push(`    project: ${shortProjectKey(session.projectKey)}`);
     for (const incident of session.incidents) {
-      lines.push(`    [${incident.evidenceClass}] ${incident.detectorId} ${incident.detectorName}`);
+      lines.push(`    [${incident.evidenceClass}] ${incident.detectorId} ${incident.detectorName} · ${incident.title}`);
     }
   }
 
