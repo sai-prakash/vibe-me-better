@@ -1,0 +1,25 @@
+{
+  "name": "vibe-me-better",
+  "version": "0.1.0",
+  "description": "Evidence-backed linting for AI coding sessions.",
+  "type": "module",
+  "bin": {
+    "vibe": "./bin/vibe.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "vibe": "node ./bin/vibe.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai-coding",
+    "claude-code",
+    "codex",
+    "lint",
+    "developer-tools"
+  ],
+  "license": "UNLICENSED",
+  "private": true
+}
