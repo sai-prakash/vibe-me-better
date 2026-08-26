@@ -7,6 +7,7 @@ import {
   fingerprintFailure,
   normalizeVerificationCommand,
 } from '../src/detectors/v002-repeated-failure-loop.js';
+import { formatScanResult } from '../src/format.js';
 import { scanTranscript } from '../src/scan.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -113,11 +114,16 @@ test('verification command fingerprint removes output-only piping noise', () => 
   );
 });
 
-test('full Claude transcript scan emits V002 through the normal scan pipeline', () => {
+test('full Claude transcript scan emits and formats V002 through the normal scan pipeline', () => {
   const fixture = path.join(here, 'fixtures', 'claude', 'repeated-failure-loop.jsonl');
   const scan = scanTranscript(fixture);
   assert.equal(scan.detectorCounts.V001, 0);
   assert.equal(scan.detectorCounts.V002, 1);
   assert.equal(scan.incidents.length, 1);
   assert.equal(scan.incidents[0].attempts, 3);
+
+  const formatted = formatScanResult(scan);
+  assert.match(formatted, /V002 REPEATED_FAILURE_LOOP/);
+  assert.match(formatted, /Attempts: 3/);
+  assert.match(formatted, /Receipts:/);
 });
