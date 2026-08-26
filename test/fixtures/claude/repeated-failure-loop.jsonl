@@ -1,0 +1,10 @@
+{"type":"assistant","timestamp":"2026-08-27T00:00:00Z","sessionId":"loop-session","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test"}}]}}
+{"type":"user","timestamp":"2026-08-27T00:00:01Z","sessionId":"loop-session","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"AssertionError: expected 42 but received 41\n    at /tmp/app.test.js:17:9"}]}}
+{"type":"assistant","timestamp":"2026-08-27T00:01:00Z","sessionId":"loop-session","message":{"content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"src/app.js"}}]}}
+{"type":"user","timestamp":"2026-08-27T00:01:01Z","sessionId":"loop-session","message":{"content":[{"type":"tool_result","tool_use_id":"e1","is_error":false,"content":"updated"}]}}
+{"type":"assistant","timestamp":"2026-08-27T00:02:00Z","sessionId":"loop-session","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"npm test 2>&1 | tail -6"}}]}}
+{"type":"user","timestamp":"2026-08-27T00:02:01Z","sessionId":"loop-session","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"AssertionError: expected 42 but received 41\n    at /tmp/app.test.js:17:9"}]}}
+{"type":"assistant","timestamp":"2026-08-27T00:03:00Z","sessionId":"loop-session","message":{"content":[{"type":"tool_use","id":"e2","name":"Edit","input":{"file_path":"src/app.js"}}]}}
+{"type":"user","timestamp":"2026-08-27T00:03:01Z","sessionId":"loop-session","message":{"content":[{"type":"tool_result","tool_use_id":"e2","is_error":false,"content":"updated"}]}}
+{"type":"assistant","timestamp":"2026-08-27T00:04:00Z","sessionId":"loop-session","message":{"content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"npm test"}}]}}
+{"type":"user","timestamp":"2026-08-27T00:04:01Z","sessionId":"loop-session","message":{"content":[{"type":"tool_result","tool_use_id":"t3","is_error":true,"content":"AssertionError: expected 42 but received 41\n    at /tmp/app.test.js:17:9"}]}}

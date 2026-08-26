@@ -24,6 +24,7 @@ export function scanClaudeCorpus({ env = process.env, includeSubagents = true } 
           filePath: item.filePath,
           sizeBytes: item.sizeBytes,
           eventCount: result.eventCount,
+          detectorCounts: result.detectorCounts,
           diagnostics: result.diagnostics,
           incidents: result.incidents,
         });
@@ -41,6 +42,13 @@ export function scanClaudeCorpus({ env = process.env, includeSubagents = true } 
     }
   }
 
+  const detectorCounts = sessions.reduce((totals, session) => {
+    for (const [id, count] of Object.entries(session.detectorCounts ?? {})) {
+      totals[id] = (totals[id] ?? 0) + count;
+    }
+    return totals;
+  }, { V001: 0, V002: 0 });
+
   return {
     source: 'claude-code',
     projectsRoot: corpus.projectsRoot,
@@ -51,6 +59,7 @@ export function scanClaudeCorpus({ env = process.env, includeSubagents = true } 
       scannedSubagents: sessions.filter((session) => session.sessionType === 'subagent').length,
       events: sessions.reduce((sum, session) => sum + session.eventCount, 0),
       incidents: sessions.reduce((sum, session) => sum + session.incidents.length, 0),
+      detectorCounts,
       errors: errors.length,
     },
     sessions,
