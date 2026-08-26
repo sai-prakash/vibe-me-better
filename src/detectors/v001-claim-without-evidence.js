@@ -1,12 +1,13 @@
 import {
   classifyVerificationCommand,
   extractVerificationClaims,
+  inferVerificationOutcome,
 } from '../core/verification.js';
 
 export const detector = {
   id: 'V001',
   name: 'CLAIM_WITHOUT_EVIDENCE',
-  version: 1,
+  version: 2,
 };
 
 export function detectClaimWithoutEvidence(events) {
@@ -25,10 +26,16 @@ export function detectClaimWithoutEvidence(events) {
       if (!call) continue;
       const verificationKind = classifyVerificationCommand(call.command ?? '');
       if (!verificationKind) continue;
+
       verificationResults.push({
         kind: verificationKind,
         call,
         result: event,
+        observation: inferVerificationOutcome({
+          output: event.output,
+          exitCode: event.exitCode,
+          isError: event.isError,
+        }),
       });
       continue;
     }
@@ -40,9 +47,7 @@ export function detectClaimWithoutEvidence(events) {
         .reverse()
         .find((item) => item.kind === claim.kind && item.result.sequence < event.sequence);
 
-      if (!candidate) continue;
-      if (candidate.result.exitCode === null && candidate.result.isError !== true) continue;
-      if (candidate.result.exitCode === 0 && candidate.result.isError !== true) continue;
+      if (!candidate || candidate.observation.outcome !== 'fail') continue;
 
       incidents.push({
         detectorId: detector.id,
@@ -66,6 +71,9 @@ export function detectClaimWithoutEvidence(events) {
             type: 'verification_result',
             exitCode: candidate.result.exitCode,
             isError: candidate.result.isError,
+            outcome: candidate.observation.outcome,
+            outcomeSource: candidate.observation.source,
+            outcomeEvidence: candidate.observation.evidence,
             output: candidate.result.output,
             event: candidate.result.rawRef,
           },

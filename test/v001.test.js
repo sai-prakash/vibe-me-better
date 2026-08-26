@@ -4,6 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanTranscript } from '../src/scan.js';
 import { detectClaimWithoutEvidence } from '../src/detectors/v001-claim-without-evidence.js';
+import {
+  classifyVerificationCommand,
+  extractVerificationClaims,
+  inferVerificationOutcome,
+} from '../src/core/verification.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(here, 'fixtures', 'claude', name);
@@ -50,4 +55,90 @@ test('V001 matches the claim to its verification category', () => {
   const incidents = detectClaimWithoutEvidence(events);
   assert.equal(incidents.length, 1);
   assert.equal(incidents[0].claim.kind, 'build');
+});
+
+test('real Claude commands classify deno, node test runner, vitest, and jest as tests', () => {
+  assert.equal(classifyVerificationCommand('npx --yes deno@2.4.4 test foo_test.ts'), 'test');
+  assert.equal(classifyVerificationCommand('node --test test/runtime-source-parity.test.mjs'), 'test');
+  assert.equal(classifyVerificationCommand('npx vitest run'), 'test');
+  assert.equal(classifyVerificationCommand('jest --runInBand'), 'test');
+});
+
+test('stdout failure summary overrides a non-error shell status', () => {
+  const observation = inferVerificationOutcome({
+    output: 'ok | 14 passed | 1 failed (39ms)',
+    exitCode: null,
+    isError: false,
+  });
+
+  assert.equal(observation.outcome, 'fail');
+  assert.equal(observation.source, 'output-summary');
+});
+
+test('V001 catches a masked upstream test failure from real Claude-style output', () => {
+  const events = [
+    {
+      kind: 'tool.call',
+      sequence: 0,
+      toolUseId: 'real-1',
+      command: 'npx --yes deno@2.4.4 test foo_test.ts 2>&1 | tail -6; npm run test:content',
+      rawRef: { line: 10 },
+    },
+    {
+      kind: 'tool.result',
+      sequence: 1,
+      toolUseId: 'real-1',
+      exitCode: null,
+      isError: false,
+      output: 'ok | 14 passed | 1 failed (39ms)',
+      rawRef: { line: 11 },
+    },
+    {
+      kind: 'message.assistant',
+      sequence: 2,
+      text: 'All tests are passing.',
+      rawRef: { line: 12 },
+    },
+  ];
+
+  const incidents = detectClaimWithoutEvidence(events);
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0].evidence[1].outcomeSource, 'output-summary');
+});
+
+test('quoted rejected success claims are not treated as assistant success claims', () => {
+  const text = 'So Task 4\'s Step 5 "GREEN, all tests pass" claim is not true — the suite does not compile, and one test fails.';
+  assert.deepEqual(extractVerificationClaims(text), []);
+
+  const events = [
+    {
+      kind: 'tool.call',
+      sequence: 0,
+      toolUseId: 'real-2',
+      command: 'node --test test/runtime-source-parity.test.mjs',
+      rawRef: { line: 20 },
+    },
+    {
+      kind: 'tool.result',
+      sequence: 1,
+      toolUseId: 'real-2',
+      exitCode: null,
+      isError: false,
+      output: 'ℹ pass 14\nℹ fail 1',
+      rawRef: { line: 21 },
+    },
+    {
+      kind: 'message.assistant',
+      sequence: 2,
+      text,
+      rawRef: { line: 22 },
+    },
+  ];
+
+  assert.equal(detectClaimWithoutEvidence(events).length, 0);
+});
+
+test('real passing summaries remain clean', () => {
+  assert.equal(inferVerificationOutcome({ output: 'ok | 62 passed | 0 failed (193ms)' }).outcome, 'pass');
+  assert.equal(inferVerificationOutcome({ output: 'ℹ pass 12\nℹ fail 0' }).outcome, 'pass');
 });
