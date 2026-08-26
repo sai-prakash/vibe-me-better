@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  collectFailureAttempts,
+  commandFamily,
   detectRepeatedFailureLoop,
   fingerprintFailure,
   normalizeVerificationCommand,
@@ -65,6 +67,20 @@ test('V002 detects the same failed verification three times with edits between a
   assert.equal(incidents[0].evidence.length, 3);
 });
 
+test('V002 detects repeated non-verification Bash failures in the same command family', () => {
+  const failure = 'Error: project ref not found for deployment target';
+  const events = [
+    call(0, 'd1', 'supabase functions deploy pipeline-worker'), result(1, 'd1', failure), edit(2, 'e1'),
+    call(3, 'd2', 'supabase functions deploy review-worker'), result(4, 'd2', failure), edit(5, 'e2'),
+    call(6, 'd3', 'supabase functions deploy health'), result(7, 'd3', failure),
+  ];
+
+  const incidents = detectRepeatedFailureLoop(events);
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0].commandFamily, 'command:supabase:functions');
+  assert.equal(incidents[0].kind, 'command');
+});
+
 test('V002 stays quiet for only two repeated failed attempts', () => {
   const events = [
     call(0, 't1'), result(1, 't1', sameFailure), edit(2, 'e1'),
@@ -103,8 +119,27 @@ test('a passing verification resets the repeated-failure cluster', () => {
   assert.equal(detectRepeatedFailureLoop(events).length, 0);
 });
 
+test('a successful generic command resets a command failure cluster', () => {
+  const command = 'supabase functions deploy health';
+  const failure = 'Error: project ref not found';
+  const events = [
+    call(0, 'd1', command), result(1, 'd1', failure), edit(2, 'e1'),
+    call(3, 'd2', command), result(4, 'd2', failure), edit(5, 'e2'),
+    call(6, 'd3', command), result(7, 'd3', 'Deployed successfully', 0), edit(8, 'e3'),
+    call(9, 'd4', command), result(10, 'd4', failure), edit(11, 'e4'),
+    call(12, 'd5', command), result(13, 'd5', failure),
+  ];
+  assert.equal(detectRepeatedFailureLoop(events).length, 0);
+});
+
 test('generic pass/fail counts alone are not treated as a same-failure fingerprint', () => {
   assert.equal(fingerprintFailure('14 passed | 1 failed'), null);
+});
+
+test('environment and tool failures produce stable fingerprints', () => {
+  assert.ok(fingerprintFailure('npm error code ETARGET\nnpm error notarget No matching version found for deno@2.4.5'));
+  assert.ok(fingerprintFailure('(eval):1: command not found: timeout'));
+  assert.ok(fingerprintFailure('stealth/ox-alpha is temporarily unavailable (timed out)'));
 });
 
 test('verification command fingerprint removes output-only piping noise', () => {
@@ -112,6 +147,24 @@ test('verification command fingerprint removes output-only piping noise', () => 
     normalizeVerificationCommand('npm test 2>&1 | tail -6'),
     normalizeVerificationCommand('npm test'),
   );
+});
+
+test('command family groups related commands without requiring exact command equality', () => {
+  assert.equal(commandFamily('npm test 2>&1 | tail -6'), 'test:npm');
+  assert.equal(commandFamily('npm test -- --runInBand'), 'test:npm');
+  assert.equal(commandFamily('supabase functions deploy health'), 'command:supabase:functions');
+  assert.equal(commandFamily('supabase functions deploy review-worker'), 'command:supabase:functions');
+});
+
+test('failure collector exposes failed Bash evidence even when it does not form a loop', () => {
+  const events = [
+    call(0, 'x1', 'timeout 10 npm test'),
+    result(1, 'x1', '(eval):1: command not found: timeout'),
+  ];
+  const runs = collectFailureAttempts(events);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].outcome, 'fail');
+  assert.ok(runs[0].failure);
 });
 
 test('full Claude transcript scan emits and formats V002 through the normal scan pipeline', () => {
