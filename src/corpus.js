@@ -18,7 +18,11 @@ export function scanClaudeCorpus({ env = process.env, includeSubagents = true } 
         sessions.push({
           projectKey: project.projectKey,
           sessionType: item.type,
+          sessionId: item.sessionId,
+          sessionRef: item.sessionRef,
+          parentSessionId: item.parentSessionId,
           filePath: item.filePath,
+          sizeBytes: item.sizeBytes,
           eventCount: result.eventCount,
           diagnostics: result.diagnostics,
           incidents: result.incidents,
@@ -27,6 +31,9 @@ export function scanClaudeCorpus({ env = process.env, includeSubagents = true } 
         errors.push({
           projectKey: project.projectKey,
           sessionType: item.type,
+          sessionId: item.sessionId,
+          sessionRef: item.sessionRef,
+          parentSessionId: item.parentSessionId,
           filePath: item.filePath,
           error: error.message,
         });

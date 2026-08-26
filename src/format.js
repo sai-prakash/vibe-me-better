@@ -17,16 +17,24 @@ function shortProjectKey(key = '') {
   return key.length <= 54 ? key : `…${key.slice(-53)}`;
 }
 
+function addSessionIdentity(lines, result, indent = '') {
+  if (result.sessionRef) lines.push(`${indent}Ref: ${result.sessionRef}`);
+  if (result.sessionId) lines.push(`${indent}Session ID: ${result.sessionId}`);
+  if (result.sessionType) lines.push(`${indent}Type: ${result.sessionType}`);
+  if (result.parentSessionId) lines.push(`${indent}Parent: ${result.parentSessionId}`);
+}
+
 export function formatScanResult(result) {
   const lines = [];
   lines.push('Vibe Lint');
   lines.push(`Session: ${result.source} · ${path.basename(result.filePath)}`);
+  addSessionIdentity(lines, result);
   lines.push('');
 
   if (result.incidents.length === 0) {
     lines.push('No V001 contradictions found.');
     lines.push(`Normalized events analyzed: ${result.eventCount}`);
-    lines.push('Run `vibe inspect <session.jsonl>` to see verification coverage.');
+    lines.push(`Run \`vibe inspect ${result.sessionRef ?? '<session>'}\` to see verification coverage.`);
     return lines.join('\n');
   }
 
@@ -58,6 +66,9 @@ export function formatInspection(result) {
   const lines = [
     'Vibe Inspect',
     `Session: ${result.source} · ${path.basename(result.filePath)}`,
+  ];
+  addSessionIdentity(lines, result);
+  lines.push(
     '',
     'Evidence coverage',
     `  Raw JSONL records:      ${result.rawLineCount}`,
@@ -67,7 +78,14 @@ export function formatInspection(result) {
     `  Bash calls:             ${result.bashCalls}`,
     `  File mutation calls:    ${result.fileMutationCalls}`,
     `  Linked subagents:       ${result.subagents.length}`,
-  ];
+  );
+
+  if (result.subagents.length > 0) {
+    lines.push('', 'Linked subagents');
+    for (const subagent of result.subagents) {
+      lines.push(`  ${subagent.sessionRef}  ${subagent.sessionId}`);
+    }
+  }
 
   const tools = Object.entries(result.toolCallsByName).sort((a, b) => b[1] - a[1]);
   if (tools.length > 0) {
@@ -107,6 +125,7 @@ export function formatCorpusInventory(corpus) {
     '',
     `Projects: ${corpus.totals.projects} · Main: ${corpus.totals.mainSessions} · Subagents: ${corpus.totals.subagents} · Size: ${formatBytes(corpus.totals.sizeBytes)}`,
     '',
+    'Projects',
     'Main  Sub   Size    Project',
     '────  ───   ─────   ──────────────────────────────────────────────────────',
   ];
@@ -117,7 +136,25 @@ export function formatCorpusInventory(corpus) {
     );
   }
 
-  if (corpus.projects.length === 0) lines.push('(no Claude transcripts found)');
+  if (corpus.projects.length === 0) {
+    lines.push('(no Claude transcripts found)');
+    return lines.join('\n');
+  }
+
+  lines.push('', 'Sessions');
+  for (const project of corpus.projects) {
+    const sessions = [...project.mainSessions, ...project.subagents]
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const session of sessions) {
+      lines.push(`${session.sessionRef}  ${session.type.padEnd(8)}  ${formatBytes(session.sizeBytes).padStart(6)}  ${session.sessionId}`);
+      lines.push(`    project: ${shortProjectKey(session.projectKey)}`);
+      if (session.parentSessionId) lines.push(`    parent:  ${session.parentSessionId}`);
+    }
+  }
+
+  lines.push('', 'Pick any session with:');
+  lines.push('  vibe inspect <ref|session-id>');
+  lines.push('  vibe scan <ref|session-id>');
   return lines.join('\n');
 }
 
@@ -133,17 +170,25 @@ export function formatBulkScan(result) {
   ];
 
   if (result.totals.errors > 0) lines.push(`Parse errors: ${result.totals.errors}`);
-  lines.push('');
 
+  lines.push('', 'Sessions scanned');
+  for (const session of result.sessions) {
+    lines.push(
+      `${session.sessionRef}  ${session.sessionType.padEnd(8)}  events=${String(session.eventCount).padStart(5)}  V001=${session.incidents.length}  ${session.sessionId}`,
+    );
+  }
+
+  lines.push('');
   const withIncidents = result.sessions.filter((session) => session.incidents.length > 0);
   if (withIncidents.length === 0) {
     lines.push(`No V001 contradictions found across ${result.totals.scannedSessions} transcript${result.totals.scannedSessions === 1 ? '' : 's'}.`);
-    lines.push('Use `vibe inspect <session.jsonl>` for evidence coverage before treating zero findings as a clean bill of health.');
+    lines.push('Pick a ref above and run `vibe inspect <ref>` for evidence coverage before treating zero findings as a clean bill of health.');
     return lines.join('\n');
   }
 
+  lines.push('Incidents');
   for (const session of withIncidents) {
-    lines.push(`${session.incidents.length} · ${session.sessionType} · ${path.basename(session.filePath)}`);
+    lines.push(`${session.incidents.length} · ${session.sessionType} · ${session.sessionRef} · ${session.sessionId}`);
     lines.push(`    project: ${shortProjectKey(session.projectKey)}`);
     for (const incident of session.incidents) {
       lines.push(`    [${incident.evidenceClass}] ${incident.detectorId} ${incident.detectorName}`);

@@ -4,12 +4,12 @@
 
 Vibe Lint is not another vibe score or session dashboard. It reads local coding-agent evidence, detects a small set of costly workflow failures, and shows the receipts.
 
-Current build: **Claude corpus inspector + V001**.
+Current build: **Claude corpus inspector + stable session refs + V001**.
 
 ```text
 Claude transcripts + subagents
         ↓
-corpus discovery / evidence inspector
+corpus discovery / stable refs / evidence inspector
         ↓
 normalized events
         ↓
@@ -21,6 +21,8 @@ evidence-backed incidents
 ## What works today
 
 - Discovers Claude Code projects, parent sessions, and subagent JSONL transcripts under `~/.claude/projects`.
+- Gives every transcript a compact stable Vibe ref such as `v_4a91c2e87d3ff7ad` while preserving Claude's native session ID.
+- Resolves a transcript by filesystem path, Vibe ref, full Claude session ID, or unique session-ID prefix.
 - Parses Claude Code JSONL locally and keeps line-level provenance.
 - Normalizes assistant messages, tool calls, and tool results into a source-independent event stream.
 - Detects `V001 CLAIM_WITHOUT_EVIDENCE` when an explicit test/build/lint success claim contradicts matching verification evidence.
@@ -42,28 +44,54 @@ npm link
 
 ## Commands
 
-Inventory all locally recorded Claude sessions:
+Inventory all locally recorded Claude sessions and get pickable refs:
 
 ```bash
 vibe sessions
 ```
 
-Inspect one real session before interpreting detector results:
+Example inventory row:
+
+```text
+v_4a91c2e87d3ff7ad  main  5.9M  95b63c43-8fb0-4b77-b5a6-6f82fdf4f09c
+```
+
+You can then inspect using the compact ref:
+
+```bash
+vibe inspect v_4a91c2e87d3ff7ad
+```
+
+The full native Claude session ID also works:
+
+```bash
+vibe inspect 95b63c43-8fb0-4b77-b5a6-6f82fdf4f09c
+```
+
+And a unique ID prefix works for convenience:
+
+```bash
+vibe inspect 95b63c43
+```
+
+Filesystem paths remain supported:
 
 ```bash
 vibe inspect ~/.claude/projects/<project>/<session>.jsonl
 ```
 
-Or inspect the latest Claude session for the current repository:
+Scan one session by the same selectors:
+
+```bash
+vibe scan v_4a91c2e87d3ff7ad
+vibe scan 95b63c43
+```
+
+Or inspect/scan the latest Claude session for the current repository:
 
 ```bash
 vibe inspect --last
-```
-
-Scan one transcript:
-
-```bash
-vibe scan ~/.claude/projects/<project>/<session>.jsonl
+vibe last
 ```
 
 Scan the entire Claude corpus, including subagents:
@@ -71,6 +99,8 @@ Scan the entire Claude corpus, including subagents:
 ```bash
 vibe scan --all
 ```
+
+The bulk output lists every scanned ref, type, event count, V001 count, and native session ID so any row can immediately be inspected.
 
 Parent sessions only:
 
@@ -82,9 +112,18 @@ Every command supports machine-readable output where applicable:
 
 ```bash
 vibe sessions --json
-vibe inspect ~/.claude/projects/<project>/<session>.jsonl --json
+vibe inspect v_4a91c2e87d3ff7ad --json
 vibe scan --all --json
 ```
+
+## Session identity
+
+Vibe intentionally keeps two identifiers:
+
+- **Claude session ID** — the native transcript filename/agent identifier for provenance.
+- **Vibe ref** — a compact deterministic ref derived from the Claude project, session type, parent ID (for subagents), and native session ID.
+
+This means two subagents both named `agent-a` can still be selected unambiguously by their different Vibe refs. If a native ID or prefix is ambiguous, Vibe refuses to guess and asks for the Vibe ref.
 
 ## Why `inspect` matters
 
@@ -94,6 +133,9 @@ vibe scan --all --json
 
 ```text
 Vibe Inspect
+Ref: v_4a91c2e87d3ff7ad
+Session ID: 95b63c43-8fb0-4b77-b5a6-6f82fdf4f09c
+Type: main
 
 Evidence coverage
   Raw JSONL records:      1330
@@ -124,6 +166,7 @@ Those numbers are illustrative; Vibe reports the values from your own transcript
 4. Cross-agent is an architecture requirement; Claude Code + Codex are the MVP integrations.
 5. Local-first by default.
 6. Zero findings must expose evidence coverage, not imply a clean bill of health.
+7. Every corpus result must be individually addressable by a stable selector.
 
 ## Docs
 
