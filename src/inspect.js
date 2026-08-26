@@ -5,7 +5,10 @@ import {
   extractVerificationClaims,
   inferVerificationOutcome,
 } from './core/verification.js';
-import { findClaudeSubagentsForTranscript } from './discovery/claude.js';
+import {
+  claudeTranscriptIdentity,
+  findClaudeSubagentsForTranscript,
+} from './discovery/claude.js';
 
 function rawLineCount(filePath) {
   const text = fs.readFileSync(filePath, 'utf8');
@@ -14,6 +17,7 @@ function rawLineCount(filePath) {
 
 export function inspectTranscript(filePath, { source = 'claude' } = {}) {
   const parsed = parseTranscript(filePath, source);
+  const identity = source === 'claude' ? claudeTranscriptIdentity(parsed.filePath) : null;
   const calls = new Map();
   const verificationRuns = [];
   const toolCallsByName = {};
@@ -80,6 +84,11 @@ export function inspectTranscript(filePath, { source = 'claude' } = {}) {
   return {
     source: parsed.source,
     filePath: parsed.filePath,
+    sessionId: identity?.sessionId ?? null,
+    sessionRef: identity?.sessionRef ?? null,
+    sessionType: identity?.type ?? null,
+    parentSessionId: identity?.parentSessionId ?? null,
+    projectKey: identity?.projectKey ?? null,
     rawLineCount: rawLineCount(parsed.filePath),
     eventCount: parsed.events.length,
     diagnostics: parsed.diagnostics,
