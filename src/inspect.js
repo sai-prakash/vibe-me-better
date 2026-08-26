@@ -89,10 +89,17 @@ export function inspectTranscript(filePath, { source = 'claude', includeFailures
   const commandRuns = collectFailureAttempts(parsed.events);
   const failedRuns = commandRuns.filter((run) => run.outcome === 'fail');
   const fingerprintable = failedRuns.filter((run) => run.failure);
+  const domainCounts = {};
+  for (const run of failedRuns) {
+    const domain = run.domain ?? 'unknown';
+    domainCounts[domain] = (domainCounts[domain] ?? 0) + 1;
+  }
+
   const groupCounts = new Map();
   for (const run of fingerprintable) {
-    const key = `${run.family}|${run.failure.hash}`;
+    const key = `${run.domain}|${run.family}|${run.failure.hash}`;
     const existing = groupCounts.get(key) ?? {
+      domain: run.domain,
       family: run.family,
       failureFingerprint: run.failure.hash,
       failure: run.failure.label,
@@ -139,12 +146,15 @@ export function inspectTranscript(filePath, { source = 'claude', includeFailures
       bashRuns: commandRuns.length,
       failed: failedRuns.length,
       fingerprintable: fingerprintable.length,
+      domainCounts,
+      externalBlockers: domainCounts.external_blocker ?? 0,
       repeatedGroups: repeatedGroups.length,
       groups: repeatedGroups,
       items: includeFailures
         ? failedRuns.map((run) => ({
           family: run.family,
           kind: run.kind,
+          domain: run.domain,
           command: run.call.command,
           failureFingerprint: run.failure?.hash ?? null,
           failure: run.failure?.label ?? null,
@@ -155,6 +165,8 @@ export function inspectTranscript(filePath, { source = 'claude', includeFailures
     behavior: {
       repeatedFailureLoops: repeatedFailureLoops.length,
       loops: repeatedFailureLoops,
+      blockedRetryLoops: repeatedFailureLoops.filter((loop) => loop.loopType === 'blocked_retry').length,
+      failedFixRetryLoops: repeatedFailureLoops.filter((loop) => loop.loopType === 'failed_fix_retry').length,
     },
     subagents: source === 'claude' ? findClaudeSubagentsForTranscript(parsed.filePath) : [],
   };

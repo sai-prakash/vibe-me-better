@@ -63,6 +63,8 @@ function formatIncident(lines, incident, index) {
   if (incident.detectorId === 'V002') {
     const first = incident.evidence[0];
     lines.push(`   Attempts: ${incident.attempts}`);
+    lines.push(`   Loop type: ${incident.loopType ?? 'unknown'}`);
+    lines.push(`   Failure domain: ${incident.failureDomain ?? first?.failureDomain ?? 'unknown'}`);
     lines.push(`   Family: ${incident.commandFamily ?? first?.commandFamily ?? 'unknown'}`);
     lines.push(`   Failure: ${incident.failure}`);
     lines.push(`   Command: ${compactCommand(first?.command ?? 'unknown')}`);
@@ -157,13 +159,24 @@ export function formatInspection(result) {
   lines.push(`  Bash results paired:    ${result.failures.bashRuns}`);
   lines.push(`  Clear failures:         ${result.failures.failed}`);
   lines.push(`  Fingerprintable:        ${result.failures.fingerprintable}`);
+  lines.push(`  External blockers:      ${result.failures.externalBlockers}`);
   lines.push(`  Repeated groups (>=2):  ${result.failures.repeatedGroups}`);
   lines.push(`  V002 loops (>=3):       ${result.behavior.repeatedFailureLoops}`);
+  lines.push(`    blocked retries:      ${result.behavior.blockedRetryLoops}`);
+  lines.push(`    failed-fix retries:   ${result.behavior.failedFixRetryLoops}`);
+
+  const domains = Object.entries(result.failures.domainCounts ?? {}).sort((a, b) => b[1] - a[1]);
+  if (domains.length > 0) {
+    lines.push('', 'Failure domains');
+    for (const [domain, count] of domains) {
+      lines.push(`  ${domain.padEnd(20)} ${count}`);
+    }
+  }
 
   if (result.failures.groups.length > 0) {
     lines.push('', 'Repeated failure groups');
     for (const group of result.failures.groups.slice(0, 10)) {
-      lines.push(`  ${group.count}× ${group.family} · ${group.failureFingerprint}`);
+      lines.push(`  ${group.count}× ${group.domain} · ${group.family} · ${group.failureFingerprint}`);
       lines.push(`     ${group.failure}`);
     }
   }
@@ -174,7 +187,7 @@ export function formatInspection(result) {
       const location = item.resultEvent?.line
         ? `${path.basename(item.resultEvent.path)}:${item.resultEvent.line}`
         : 'unknown';
-      lines.push(`  ${location} · ${item.family} · ${item.failureFingerprint ?? 'no-fingerprint'}`);
+      lines.push(`  ${location} · ${item.domain ?? 'unknown'} · ${item.family} · ${item.failureFingerprint ?? 'no-fingerprint'}`);
       lines.push(`     ${compactCommand(item.command)}`);
       if (item.failure) lines.push(`     ${item.failure}`);
     }
