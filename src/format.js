@@ -6,6 +6,11 @@ function compactOutput(output = '') {
   return firstLine.length > 120 ? `${firstLine.slice(0, 117)}...` : firstLine;
 }
 
+function compactCommand(command = '') {
+  const flat = String(command).replace(/\s+/g, ' ').trim();
+  return flat.length > 110 ? `${flat.slice(0, 107)}...` : flat;
+}
+
 function formatBytes(bytes = 0) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)}K`;
@@ -58,8 +63,9 @@ function formatIncident(lines, incident, index) {
   if (incident.detectorId === 'V002') {
     const first = incident.evidence[0];
     lines.push(`   Attempts: ${incident.attempts}`);
+    lines.push(`   Family: ${incident.commandFamily ?? first?.commandFamily ?? 'unknown'}`);
     lines.push(`   Failure: ${incident.failure}`);
-    lines.push(`   Command: ${first?.command ?? 'unknown'}`);
+    lines.push(`   Command: ${compactCommand(first?.command ?? 'unknown')}`);
     lines.push(`   Failure fingerprint: ${incident.failureFingerprint}`);
     const duration = formatDuration(incident.durationMs);
     if (duration) lines.push(`   Span: ${duration}`);
@@ -88,7 +94,7 @@ export function formatScanResult(result) {
   if (result.incidents.length === 0) {
     lines.push('No Vibe incidents found.');
     lines.push(`Normalized events analyzed: ${result.eventCount}`);
-    lines.push(`Run \`vibe inspect ${result.sessionRef ?? '<session>'}\` to see evidence coverage.`);
+    lines.push(`Run \`vibe inspect ${result.sessionRef ?? '<session>'} --failures\` to audit failure evidence.`);
     return lines.join('\n');
   }
 
@@ -146,6 +152,49 @@ export function formatInspection(result) {
   lines.push(`  Supported:              ${result.claims.supported}`);
   lines.push(`  Contradicted:           ${result.claims.contradicted}`);
   lines.push(`  Unknown/no evidence:    ${result.claims.unknown}`);
+
+  lines.push('', 'Command failure evidence');
+  lines.push(`  Bash results paired:    ${result.failures.bashRuns}`);
+  lines.push(`  Clear failures:         ${result.failures.failed}`);
+  lines.push(`  Fingerprintable:        ${result.failures.fingerprintable}`);
+  lines.push(`  Repeated groups (>=2):  ${result.failures.repeatedGroups}`);
+  lines.push(`  V002 loops (>=3):       ${result.behavior.repeatedFailureLoops}`);
+
+  if (result.failures.groups.length > 0) {
+    lines.push('', 'Repeated failure groups');
+    for (const group of result.failures.groups.slice(0, 10)) {
+      lines.push(`  ${group.count}× ${group.family} · ${group.failureFingerprint}`);
+      lines.push(`     ${group.failure}`);
+    }
+  }
+
+  if (result.failures.items.length > 0) {
+    lines.push('', 'Failed command receipts');
+    for (const item of result.failures.items.slice(0, 30)) {
+      const location = item.resultEvent?.line
+        ? `${path.basename(item.resultEvent.path)}:${item.resultEvent.line}`
+        : 'unknown';
+      lines.push(`  ${location} · ${item.family} · ${item.failureFingerprint ?? 'no-fingerprint'}`);
+      lines.push(`     ${compactCommand(item.command)}`);
+      if (item.failure) lines.push(`     ${item.failure}`);
+    }
+    if (result.failures.items.length > 30) {
+      lines.push(`  … ${result.failures.items.length - 30} more (use --json for all)`);
+    }
+  }
+
+  if (result.verification.unknownRuns.length > 0) {
+    lines.push('', 'Unknown verification receipts');
+    for (const run of result.verification.unknownRuns.slice(0, 20)) {
+      const location = run.resultEvent?.line
+        ? `${path.basename(run.resultEvent.path)}:${run.resultEvent.line}`
+        : 'unknown';
+      lines.push(`  ${location} · ${run.kind} · ${compactCommand(run.command)}`);
+    }
+    if (result.verification.unknownRuns.length > 20) {
+      lines.push(`  … ${result.verification.unknownRuns.length - 20} more (use --json for all)`);
+    }
+  }
 
   if (result.diagnostics.length > 0) {
     lines.push('', `Parser diagnostics: ${result.diagnostics.length}`);
@@ -220,7 +269,7 @@ export function formatBulkScan(result) {
   const withIncidents = result.sessions.filter((session) => session.incidents.length > 0);
   if (withIncidents.length === 0) {
     lines.push(`No Vibe incidents found across ${result.totals.scannedSessions} transcript${result.totals.scannedSessions === 1 ? '' : 's'}.`);
-    lines.push('Pick a ref above and run `vibe inspect <ref>` for evidence coverage before treating zero findings as a clean bill of health.');
+    lines.push('Pick a ref above and run `vibe inspect <ref> --failures` to audit the failed commands Vibe considered.');
     return lines.join('\n');
   }
 
