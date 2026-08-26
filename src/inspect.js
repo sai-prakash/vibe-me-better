@@ -5,6 +5,7 @@ import {
   extractVerificationClaims,
   inferVerificationOutcome,
 } from './core/verification.js';
+import { detectRepeatedFailureLoop } from './detectors/v002-repeated-failure-loop.js';
 import {
   claudeTranscriptIdentity,
   findClaudeSubagentsForTranscript,
@@ -80,6 +81,7 @@ export function inspectTranscript(filePath, { source = 'claude' } = {}) {
 
   const claimSummary = { total: claims.length, supported: 0, contradicted: 0, unknown: 0 };
   for (const claim of claims) claimSummary[claim.status] += 1;
+  const repeatedFailureLoops = detectRepeatedFailureLoop(parsed.events);
 
   return {
     source: parsed.source,
@@ -107,6 +109,10 @@ export function inspectTranscript(filePath, { source = 'claude' } = {}) {
     claims: {
       ...claimSummary,
       items: claims,
+    },
+    behavior: {
+      repeatedFailureLoops: repeatedFailureLoops.length,
+      loops: repeatedFailureLoops,
     },
     subagents: source === 'claude' ? findClaudeSubagentsForTranscript(parsed.filePath) : [],
   };
