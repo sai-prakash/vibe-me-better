@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   detectRepeatedFailureLoop,
   fingerprintFailure,
   normalizeVerificationCommand,
 } from '../src/detectors/v002-repeated-failure-loop.js';
+import { scanTranscript } from '../src/scan.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 function call(sequence, id, command = 'npm test') {
   return {
@@ -106,4 +111,13 @@ test('verification command fingerprint removes output-only piping noise', () => 
     normalizeVerificationCommand('npm test 2>&1 | tail -6'),
     normalizeVerificationCommand('npm test'),
   );
+});
+
+test('full Claude transcript scan emits V002 through the normal scan pipeline', () => {
+  const fixture = path.join(here, 'fixtures', 'claude', 'repeated-failure-loop.jsonl');
+  const scan = scanTranscript(fixture);
+  assert.equal(scan.detectorCounts.V001, 0);
+  assert.equal(scan.detectorCounts.V002, 1);
+  assert.equal(scan.incidents.length, 1);
+  assert.equal(scan.incidents[0].attempts, 3);
 });
