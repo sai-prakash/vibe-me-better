@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  classifyFailureDomain,
   collectFailureAttempts,
   commandFamily,
   detectRepeatedFailureLoop,
@@ -51,6 +52,7 @@ function edit(sequence, id) {
 }
 
 const sameFailure = 'AssertionError: expected 42 but received 41\n    at /Users/sai/code/app/test.js:17:9';
+const blocker = 'stealth/ox-alpha is temporarily unavailable (timed out), so auto mode cannot determine the safety of Bash right now.';
 
 test('V002 detects the same failed verification three times with edits between attempts', () => {
   const events = [
@@ -63,6 +65,8 @@ test('V002 detects the same failed verification three times with edits between a
   assert.equal(incidents.length, 1);
   assert.equal(incidents[0].detectorId, 'V002');
   assert.equal(incidents[0].evidenceClass, 'B');
+  assert.equal(incidents[0].loopType, 'failed_fix_retry');
+  assert.equal(incidents[0].failureDomain, 'verification');
   assert.equal(incidents[0].attempts, 3);
   assert.equal(incidents[0].evidence.length, 3);
 });
@@ -81,6 +85,32 @@ test('V002 detects repeated non-verification Bash failures in the same command f
   assert.equal(incidents[0].kind, 'command');
 });
 
+test('V002 surfaces repeated external blockers even when no code mutation could occur', () => {
+  const command = 'git add .gitignore && git commit -m "chore"';
+  const events = [
+    call(0, 'b1', command), result(1, 'b1', blocker),
+    call(2, 'b2', command), result(3, 'b2', blocker),
+    call(4, 'b3', command), result(5, 'b3', blocker),
+    call(6, 'b4', command), result(7, 'b4', blocker),
+  ];
+
+  const incidents = detectRepeatedFailureLoop(events);
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0].loopType, 'blocked_retry');
+  assert.equal(incidents[0].failureDomain, 'external_blocker');
+  assert.equal(incidents[0].commandFamily, 'command:git:add');
+  assert.equal(incidents[0].attempts, 4);
+});
+
+test('ordinary repeated failures still require a structured code mutation', () => {
+  const events = [
+    call(0, 't1'), result(1, 't1', sameFailure),
+    call(2, 't2'), result(3, 't2', sameFailure),
+    call(4, 't3'), result(5, 't3', sameFailure),
+  ];
+  assert.equal(detectRepeatedFailureLoop(events).length, 0);
+});
+
 test('V002 stays quiet for only two repeated failed attempts', () => {
   const events = [
     call(0, 't1'), result(1, 't1', sameFailure), edit(2, 'e1'),
@@ -95,15 +125,6 @@ test('V002 treats a changed failure fingerprint as progress, not a loop', () => 
     call(3, 't2'), result(4, 't2', 'TypeError: cannot read properties of undefined'), edit(5, 'e2'),
     call(6, 't3'), result(7, 't3', sameFailure), edit(8, 'e3'),
     call(9, 't4'), result(10, 't4', sameFailure),
-  ];
-  assert.equal(detectRepeatedFailureLoop(events).length, 0);
-});
-
-test('V002 requires a structured code mutation between repeated failures', () => {
-  const events = [
-    call(0, 't1'), result(1, 't1', sameFailure),
-    call(2, 't2'), result(3, 't2', sameFailure),
-    call(4, 't3'), result(5, 't3', sameFailure),
   ];
   assert.equal(detectRepeatedFailureLoop(events).length, 0);
 });
@@ -136,10 +157,16 @@ test('generic pass/fail counts alone are not treated as a same-failure fingerpri
   assert.equal(fingerprintFailure('14 passed | 1 failed'), null);
 });
 
+test('failure domains distinguish external blockers, environment failures, and verification failures', () => {
+  assert.equal(classifyFailureDomain(blocker), 'external_blocker');
+  assert.equal(classifyFailureDomain('(eval):1: command not found: ffprobe'), 'environment');
+  assert.equal(classifyFailureDomain('TS2339 [ERROR]: property queued does not exist', { verificationKind: 'test' }), 'verification');
+});
+
 test('environment and tool failures produce stable fingerprints', () => {
   assert.ok(fingerprintFailure('npm error code ETARGET\nnpm error notarget No matching version found for deno@2.4.5'));
   assert.ok(fingerprintFailure('(eval):1: command not found: timeout'));
-  assert.ok(fingerprintFailure('stealth/ox-alpha is temporarily unavailable (timed out)'));
+  assert.ok(fingerprintFailure(blocker));
 });
 
 test('verification command fingerprint removes output-only piping noise', () => {
@@ -149,14 +176,16 @@ test('verification command fingerprint removes output-only piping noise', () => 
   );
 });
 
-test('command family groups related commands without requiring exact command equality', () => {
+test('command family uses executable segments instead of filenames or heredoc content', () => {
   assert.equal(commandFamily('npm test 2>&1 | tail -6'), 'test:npm');
   assert.equal(commandFamily('npm test -- --runInBand'), 'test:npm');
   assert.equal(commandFamily('supabase functions deploy health'), 'command:supabase:functions');
   assert.equal(commandFamily('supabase functions deploy review-worker'), 'command:supabase:functions');
+  assert.equal(commandFamily('printf "x" >> .gitignore && git add .gitignore && git commit -m "chore"'), 'command:git:add');
+  assert.equal(commandFamily('git add test/runtime-source-parity.test.mjs'), 'command:git:add');
 });
 
-test('failure collector exposes failed Bash evidence even when it does not form a loop', () => {
+test('failure collector exposes domain for failed Bash evidence', () => {
   const events = [
     call(0, 'x1', 'timeout 10 npm test'),
     result(1, 'x1', '(eval):1: command not found: timeout'),
@@ -164,6 +193,7 @@ test('failure collector exposes failed Bash evidence even when it does not form 
   const runs = collectFailureAttempts(events);
   assert.equal(runs.length, 1);
   assert.equal(runs[0].outcome, 'fail');
+  assert.equal(runs[0].domain, 'environment');
   assert.ok(runs[0].failure);
 });
 
@@ -178,5 +208,6 @@ test('full Claude transcript scan emits and formats V002 through the normal scan
   const formatted = formatScanResult(scan);
   assert.match(formatted, /V002 REPEATED_FAILURE_LOOP/);
   assert.match(formatted, /Attempts: 3/);
+  assert.match(formatted, /Failure domain:/);
   assert.match(formatted, /Receipts:/);
 });
