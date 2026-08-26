@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { scanTranscript } from './scan.js';
 import { findLatestClaudeTranscript, claudeConfigDir } from './discovery/claude.js';
 import { formatScanResult } from './format.js';
@@ -80,7 +81,7 @@ export function runCli(argv = process.argv.slice(2)) {
       `CWD: ${process.cwd()}`,
       `Claude config: ${configDir}`,
       `Claude config exists: ${fs.existsSync(configDir) ? 'yes' : 'no'}`,
-      `Package root: ${path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')}`,
+      `Package root: ${path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')}`,
       '',
     ].join('\n'));
     return 0;
