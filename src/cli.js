@@ -8,6 +8,7 @@ import {
   claudeConfigDir,
   discoverClaudeCorpus,
   findLatestClaudeTranscript,
+  resolveClaudeSession,
 } from './discovery/claude.js';
 import {
   formatBulkScan,
@@ -19,17 +20,23 @@ import {
 const HELP = `vibe — evidence-backed linting for AI coding sessions
 
 Usage:
-  vibe scan <transcript.jsonl> [--source claude] [--json]
+  vibe scan <path|session-id|vibe-ref> [--source claude] [--json]
   vibe scan --all [--json] [--no-subagents]
-  vibe inspect <transcript.jsonl> [--json]
+  vibe inspect <path|session-id|vibe-ref> [--json]
   vibe inspect --last [--json]
   vibe sessions [--json]
   vibe last [--json]
   vibe doctor
   vibe help
 
+Examples:
+  vibe sessions
+  vibe inspect v_4a91c2e87d3ff7ad
+  vibe inspect 95b63c43-8fb0-4b77-b5a6-6f82fdf4f09c
+  vibe scan 95b63c43
+
 Current milestone:
-  Claude corpus inventory + evidence inspector + V001 across parent/subagent transcripts.
+  Claude corpus inventory + stable session refs + evidence inspector + V001.
 `;
 
 function parseFlags(args) {
@@ -76,9 +83,17 @@ function printResult(result, json, formatter) {
   }
 }
 
-function requireTranscript(filePath) {
-  if (!filePath) throw new Error('A transcript path is required.');
-  if (!fs.existsSync(filePath)) throw new Error(`Transcript not found: ${filePath}`);
+function requireTranscript(selector, { source = 'claude', env = process.env } = {}) {
+  if (!selector) throw new Error('A transcript path, session ID, or Vibe ref is required.');
+
+  if (source === 'claude') {
+    const session = resolveClaudeSession(selector, env);
+    if (session) return session.filePath;
+    throw new Error(`Claude session not found: ${selector}. Run \`vibe sessions\` to list available refs.`);
+  }
+
+  const filePath = path.resolve(selector);
+  if (!fs.existsSync(filePath)) throw new Error(`Transcript not found: ${selector}`);
   return filePath;
 }
 
@@ -97,22 +112,23 @@ export function runCli(argv = process.argv.slice(2)) {
       return 0;
     }
 
-    const filePath = requireTranscript(values[0]);
+    const filePath = requireTranscript(values[0], { source });
     printResult(scanTranscript(filePath, { source }), json, formatScanResult);
     return 0;
   }
 
   if (command === 'inspect') {
     const { values, source, json, last } = parseFlags(rest);
-    const filePath = last
+    const selector = last
       ? findLatestClaudeTranscript(process.cwd())
       : values[0];
 
-    if (last && !filePath) {
+    if (last && !selector) {
       throw new Error(`No Claude Code transcript found for ${process.cwd()} under ${claudeConfigDir()}/projects.`);
     }
 
-    printResult(inspectTranscript(requireTranscript(filePath), { source }), json, formatInspection);
+    const filePath = requireTranscript(selector, { source });
+    printResult(inspectTranscript(filePath, { source }), json, formatInspection);
     return 0;
   }
 
