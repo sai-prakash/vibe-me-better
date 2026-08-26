@@ -8,6 +8,7 @@ import {
   classifyVerificationCommand,
   extractVerificationClaims,
   inferVerificationOutcome,
+  shellCommandSegments,
 } from '../src/core/verification.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -62,6 +63,32 @@ test('real Claude commands classify deno, node test runner, vitest, and jest as 
   assert.equal(classifyVerificationCommand('node --test test/runtime-source-parity.test.mjs'), 'test');
   assert.equal(classifyVerificationCommand('npx vitest run'), 'test');
   assert.equal(classifyVerificationCommand('jest --runInBand'), 'test');
+});
+
+test('verification classifier only considers executable shell segments', () => {
+  assert.equal(
+    classifyVerificationCommand('git add test/runtime-source-parity.test.mjs && git commit -m "tests updated"'),
+    null,
+  );
+  assert.equal(
+    classifyVerificationCommand('cat > report.md <<\'EOF\'\nnode --test fake.test.js\nEOF'),
+    null,
+  );
+  assert.equal(
+    classifyVerificationCommand('SDD=.superpowers/sdd/run cat >> progress.md <<\'EOF\'\ntest(\'not a shell command\', () => {})\nEOF'),
+    null,
+  );
+  assert.equal(classifyVerificationCommand('cd renderer && npm test'), 'test');
+  assert.equal(classifyVerificationCommand('set -e\necho checking\nnode --test test/a.test.mjs'), 'test');
+});
+
+test('shell segmentation preserves quoted grep pipes and strips heredoc bodies', () => {
+  const segments = shellCommandSegments('node --test test/a.test.mjs 2>&1 | grep "^pass\\|^fail"');
+  assert.equal(segments[0], 'node --test test/a.test.mjs 2>&1');
+  assert.equal(segments[1], 'grep "^pass\\|^fail"');
+
+  const heredoc = shellCommandSegments('cat > x <<\'EOF\'\nnpm test\nEOF\ngit status');
+  assert.deepEqual(heredoc, ["cat > x <<'EOF'", 'git status']);
 });
 
 test('stdout failure summary overrides a non-error shell status', () => {
